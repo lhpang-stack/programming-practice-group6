@@ -8,6 +8,10 @@ namespace Utils {
 
     bool ensureDataDirectory();
     bool fileExists(const std::string& path);
+
+    std::string getCurrentTimeString();
+    bool isDateTimeReached(const std::string& dateTime);
+    bool isValidDateTimeFormat(const std::string& dateTime);
 }
 
 #endif
