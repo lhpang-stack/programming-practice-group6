@@ -18,6 +18,8 @@ bool UserManager::registerUser(const std::string& username, const std::string& p
         return false;
     }
 
+    loadUsers();
+
     if (userExists(username)) {
         return false;
     }
@@ -27,13 +29,22 @@ bool UserManager::registerUser(const std::string& username, const std::string& p
 }
 
 bool UserManager::login(const std::string& username, const std::string& password) {
+    if (username.empty() || password.empty()) {
+        currentUser.clear();
+        return false;
+    }
+
+    loadUsers();
+
     auto it = users.find(username);
 
     if (it == users.end()) {
+        currentUser.clear();
         return false;
     }
 
     if (it->second != password) {
+        currentUser.clear();
         return false;
     }
 
