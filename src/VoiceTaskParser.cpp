@@ -254,4 +254,191 @@ bool parseDateTimeAfterKeyword(
     return parseDateTimeFromTokenWindow(words, keywordPosition + 1, output, consumedUntil);
 }
 
+int findKeywordPosition(
+    const std::vector<std::string>& words,
+    bool (*predicate)(const std::string&),
+    int begin = 0
+) {
+    for (int i = begin; i < static_cast<int>(words.size()); ++i) {
+        if (predicate(words[i])) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+std::string joinNameWords(const std::vector<std::string>& words, int begin, int end) {
+    std::string result;
+
+    for (int i = begin; i < end; ++i) {
+        const std::string lower = toLowerCopy(words[i]);
+
+        if (i == begin && isCommandKeyword(lower)) {
+            continue;
+        }
+
+        if (
+            lower == "please" ||
+            lower == "a" ||
+            lower == "an" ||
+            lower == "the"
+        ) {
+            continue;
+        }
+
+        std::string cleanPart = sanitizeNamePart(words[i]);
+
+        if (cleanPart.empty()) {
+            continue;
+        }
+
+        if (!result.empty()) {
+            result += "_";
+        }
+
+        result += cleanPart;
+    }
+
+    return result;
+}
+
+std::string normalizePriority(const std::string& value) {
+    const std::string lower = toLowerCopy(value);
+
+    if (
+        lower == "hi" ||
+        lower == "high" ||
+        lower == "important" ||
+        lower == "urgent"
+    ) {
+        return "high";
+    }
+
+    if (
+        lower == "medium" ||
+        lower == "middle" ||
+        lower == "mid" ||
+        lower == "normal"
+    ) {
+        return "medium";
+    }
+
+    if (
+        lower == "low" ||
+        lower == "minor"
+    ) {
+        return "low";
+    }
+
+    return "medium";
+}
+
+std::string normalizeCategory(const std::string& value) {
+    const std::string lower = toLowerCopy(value);
+
+    if (lower.empty()) {
+        return "life";
+    }
+
+    if (
+        lower == "study" ||
+        lower == "learn" ||
+        lower == "learning" ||
+        lower == "course" ||
+        lower == "school"
+    ) {
+        return "study";
+    }
+
+    if (
+        lower == "work" ||
+        lower == "job" ||
+        lower == "office"
+    ) {
+        return "work";
+    }
+
+    if (
+        lower == "life" ||
+        lower == "daily" ||
+        lower == "home"
+    ) {
+        return "life";
+    }
+
+    if (
+        lower == "play" ||
+        lower == "fun" ||
+        lower == "entertainment"
+    ) {
+        return "entertainment";
+    }
+
+    return lower;
+}
+
 } // namespace
+
+bool VoiceTaskParser::parse(const std::string& text, VoiceTaskInfo& taskInfo) {
+    const std::vector<std::string> words = splitWords(text);
+
+    if (words.empty()) {
+        return false;
+    }
+
+    taskInfo.name.clear();
+    taskInfo.startTime.clear();
+    taskInfo.priority = "medium";
+    taskInfo.category = "life";
+    taskInfo.remindTime.clear();
+
+    const int atPos = findKeywordPosition(words, isAtKeyword);
+
+    if (atPos == -1) {
+        return false;
+    }
+
+    int startConsumedUntil = atPos + 1;
+
+    if (!parseDateTimeAfterKeyword(words, atPos, taskInfo.startTime, startConsumedUntil)) {
+        return false;
+    }
+
+    taskInfo.name = joinNameWords(words, 0, atPos);
+
+    if (taskInfo.name.empty()) {
+        taskInfo.name = "VoiceTask";
+    }
+
+    const int priorityPos = findKeywordPosition(words, isPriorityKeyword, startConsumedUntil);
+    const int categoryPos = findKeywordPosition(words, isCategoryKeyword, startConsumedUntil);
+    const int remindPos = findKeywordPosition(words, isRemindKeyword, startConsumedUntil);
+
+    if (priorityPos != -1 && priorityPos + 1 < static_cast<int>(words.size())) {
+        taskInfo.priority = normalizePriority(words[priorityPos + 1]);
+    }
+
+    if (categoryPos != -1 && categoryPos + 1 < static_cast<int>(words.size())) {
+        taskInfo.category = normalizeCategory(words[categoryPos + 1]);
+    }
+
+    if (remindPos != -1) {
+        int remindConsumedUntil = remindPos + 1;
+        std::string parsedRemindTime;
+
+        if (parseDateTimeAfterKeyword(words, remindPos, parsedRemindTime, remindConsumedUntil)) {
+            taskInfo.remindTime = parsedRemindTime;
+        }
+    }
+
+    if (taskInfo.remindTime.empty()) {
+        taskInfo.remindTime = taskInfo.startTime;
+    }
+
+    return !taskInfo.name.empty() &&
+           !taskInfo.startTime.empty() &&
+           !taskInfo.priority.empty() &&
+           !taskInfo.category.empty() &&
+           !taskInfo.remindTime.empty();
+}
