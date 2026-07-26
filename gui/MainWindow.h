@@ -1,6 +1,9 @@
 #ifndef MAIN_WINDOW_H
 #define MAIN_WINDOW_H
 
+#include "TaskManager.h"
+#include "UserManager.h"
+
 #include <QComboBox>
 #include <QLabel>
 #include <QLineEdit>
@@ -10,6 +13,7 @@
 #include <QTimer>
 #include <QWidget>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -52,8 +56,28 @@ private:
 
     QTimer* reminderTimer;
 
+    UserManager userManager;
+    std::unique_ptr<TaskManager> taskManager;
+    std::string currentUsername;
+
     void setupUi();
     void connectSignals();
+
+    void handleLogin();
+    void handleAddTask();
+    void handleEditTask();
+    void handleDeleteTask();
+    void handleDoneTask();
+
+    void refreshTaskTable();
+    void refreshTaskTableWithFilters();
+    void fillTaskTable(const std::vector<Task>& tasks);
+
+    void handleClearFilters();
+    void handleReminderCheck();
+
+    int getSelectedTaskId() const;
+    void loadSelectedTaskToEditor();
     void setTaskControlsEnabled(bool enabled);
 };
 

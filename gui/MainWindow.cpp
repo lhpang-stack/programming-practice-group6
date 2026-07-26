@@ -1,5 +1,8 @@
 #include "MainWindow.h"
 
+#include "SoundReminder.h"
+#include "Task.h"
+
 #include <QComboBox>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -7,7 +10,33 @@
 #include <QMessageBox>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
+
+#include <algorithm>
+#include <cctype>
+#include <vector>
 #include <Qt>
+
+namespace {
+
+std::string toLowerCopy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+bool containsIgnoreCase(const std::string& text, const std::string& keyword) {
+    if (keyword.empty()) {
+        return true;
+    }
+
+    const std::string lowerText = toLowerCopy(text);
+    const std::string lowerKeyword = toLowerCopy(keyword);
+
+    return lowerText.find(lowerKeyword) != std::string::npos;
+}
+
+} // namespace
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent),
@@ -33,7 +62,8 @@ MainWindow::MainWindow(QWidget* parent)
       doneTaskButton(nullptr),
       refreshButton(nullptr),
       operationStatusLabel(nullptr),
-      reminderTimer(nullptr) {
+      reminderTimer(nullptr),
+      userManager("data/users.txt") {
     setupUi();
     connectSignals();
     setTaskControlsEnabled(false);
@@ -238,6 +268,16 @@ void MainWindow::setupUi() {
 }
 
 void MainWindow::connectSignals() {
+    connect(loginButton, &QPushButton::clicked, this, &MainWindow::handleLogin);
+    connect(addTaskButton, &QPushButton::clicked, this, &MainWindow::handleAddTask);
+    connect(editTaskButton, &QPushButton::clicked, this, &MainWindow::handleEditTask);
+    connect(deleteTaskButton, &QPushButton::clicked, this, &MainWindow::handleDeleteTask);
+    connect(doneTaskButton, &QPushButton::clicked, this, &MainWindow::handleDoneTask);
+    connect(refreshButton, &QPushButton::clicked, this, &MainWindow::refreshTaskTable);
+    connect(searchButton, &QPushButton::clicked, this, &MainWindow::refreshTaskTableWithFilters);
+    connect(clearFilterButton, &QPushButton::clicked, this, &MainWindow::handleClearFilters);
+    connect(taskTable, &QTableWidget::cellClicked, this, &MainWindow::loadSelectedTaskToEditor);
+    connect(reminderTimer, &QTimer::timeout, this, &MainWindow::handleReminderCheck);
 }
 
 void MainWindow::setTaskControlsEnabled(bool enabled) {
@@ -260,4 +300,317 @@ void MainWindow::setTaskControlsEnabled(bool enabled) {
     deleteTaskButton->setEnabled(enabled);
     doneTaskButton->setEnabled(enabled);
     refreshButton->setEnabled(enabled);
+}
+
+void MainWindow::handleLogin() {
+    const QString username = usernameEdit->text().trimmed();
+    const QString password = passwordEdit->text();
+
+    if (!userManager.loginUser(username.toStdString(), password.toStdString())) {
+        loginStatusLabel->setText("Login failed");
+        QMessageBox::warning(this, "Login Failed", "Invalid username or password.");
+        return;
+    }
+
+    currentUsername = username.toStdString();
+    taskManager = std::make_unique<TaskManager>(currentUsername);
+
+    if (!taskManager->loadTasks()) {
+        QMessageBox::information(this, "Load Notice", "No existing task file found. A new one will be created after adding tasks.");
+    }
+
+    loginStatusLabel->setText("Logged in: " + username);
+    operationStatusLabel->setText("Login successful. GUI reminder timer started.");
+    setTaskControlsEnabled(true);
+    refreshTaskTable();
+
+    reminderTimer->start();
+}
+
+void MainWindow::fillTaskTable(const std::vector<Task>& tasks) {
+    taskTable->setRowCount(0);
+
+    for (const auto& task : tasks) {
+        const int row = taskTable->rowCount();
+        taskTable->insertRow(row);
+
+        taskTable->setItem(row, 0, new QTableWidgetItem(QString::number(task.id)));
+        taskTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(task.name)));
+        taskTable->setItem(row, 2, new QTableWidgetItem(QString::fromStdString(task.startTime)));
+        taskTable->setItem(row, 3, new QTableWidgetItem(QString::fromStdString(task.priority)));
+        taskTable->setItem(row, 4, new QTableWidgetItem(QString::fromStdString(task.category)));
+        taskTable->setItem(row, 5, new QTableWidgetItem(QString::fromStdString(task.remindTime)));
+        taskTable->setItem(row, 6, new QTableWidgetItem(QString::fromStdString(task.status)));
+        taskTable->setItem(row, 7, new QTableWidgetItem(task.reminded ? "yes" : "no"));
+    }
+}
+
+void MainWindow::refreshTaskTable() {
+    if (!taskManager) {
+        return;
+    }
+
+    taskManager->loadTasks();
+
+    std::vector<Task> tasks = taskManager->getTasks();
+
+    std::sort(tasks.begin(), tasks.end(), [](const Task& a, const Task& b) {
+        return a.startTime < b.startTime;
+    });
+
+    fillTaskTable(tasks);
+    operationStatusLabel->setText("Task list refreshed.");
+}
+
+void MainWindow::refreshTaskTableWithFilters() {
+    if (!taskManager) {
+        return;
+    }
+
+    taskManager->loadTasks();
+
+    const std::string keyword = keywordEdit->text().trimmed().toStdString();
+    const std::string statusFilter = statusFilterBox->currentText().toStdString();
+    const std::string priorityFilter = priorityFilterBox->currentText().toStdString();
+
+    std::vector<Task> tasks = taskManager->getTasks();
+    std::vector<Task> filteredTasks;
+
+    for (const auto& task : tasks) {
+        bool matched = true;
+
+        if (statusFilter != "all" && task.status != statusFilter) {
+            matched = false;
+        }
+
+        if (priorityFilter != "all" && task.priority != priorityFilter) {
+            matched = false;
+        }
+
+        const bool keywordMatched =
+            containsIgnoreCase(task.name, keyword) ||
+            containsIgnoreCase(task.category, keyword) ||
+            containsIgnoreCase(task.priority, keyword) ||
+            containsIgnoreCase(task.status, keyword) ||
+            containsIgnoreCase(task.startTime, keyword) ||
+            containsIgnoreCase(task.remindTime, keyword);
+
+        if (!keywordMatched) {
+            matched = false;
+        }
+
+        if (matched) {
+            filteredTasks.push_back(task);
+        }
+    }
+
+    std::sort(filteredTasks.begin(), filteredTasks.end(), [](const Task& a, const Task& b) {
+        return a.startTime < b.startTime;
+    });
+
+    fillTaskTable(filteredTasks);
+
+    operationStatusLabel->setText(
+        "Filter applied. Matched tasks: " + QString::number(static_cast<int>(filteredTasks.size()))
+    );
+}
+
+void MainWindow::handleClearFilters() {
+    keywordEdit->clear();
+    statusFilterBox->setCurrentText("all");
+    priorityFilterBox->setCurrentText("all");
+
+    refreshTaskTable();
+    operationStatusLabel->setText("Filters cleared.");
+}
+
+void MainWindow::handleAddTask() {
+    if (!taskManager) {
+        return;
+    }
+
+    const std::string name = taskNameEdit->text().trimmed().toStdString();
+    const std::string startTime = startTimeEdit->text().trimmed().toStdString();
+    std::string priority = priorityEdit->text().trimmed().toStdString();
+    std::string category = categoryEdit->text().trimmed().toStdString();
+    const std::string remindTime = remindTimeEdit->text().trimmed().toStdString();
+
+    // DELIBERATE BUG: Missing check for empty task name and start time here.
+
+    if (priority.empty()) {
+        priority = "medium";
+    }
+
+    if (category.empty()) {
+        category = "life";
+    }
+
+    const bool ok = taskManager->addTask(
+        name,
+        startTime,
+        priority,
+        category,
+        remindTime
+    );
+
+    if (!ok) {
+        QMessageBox::warning(
+            this,
+            "Add Failed",
+            "Failed to add task. Please check time format or uniqueness constraints."
+        );
+        return;
+    }
+
+    taskNameEdit->clear();
+    startTimeEdit->clear();
+    priorityEdit->clear();
+    categoryEdit->clear();
+    remindTimeEdit->clear();
+
+    operationStatusLabel->setText("Task added successfully.");
+    refreshTaskTable();
+}
+
+int MainWindow::getSelectedTaskId() const {
+    const int row = taskTable->currentRow();
+
+    if (row < 0) {
+        return -1;
+    }
+
+    QTableWidgetItem* idItem = taskTable->item(row, 0);
+
+    if (!idItem) {
+        return -1;
+    }
+
+    bool ok = false;
+    const int id = idItem->text().toInt(&ok);
+
+    return ok ? id : -1;
+}
+
+void MainWindow::loadSelectedTaskToEditor() {
+    const int row = taskTable->currentRow();
+
+    if (row < 0) {
+        return;
+    }
+
+    auto getText = [this, row](int column) -> QString {
+        QTableWidgetItem* item = taskTable->item(row, column);
+        return item ? item->text() : QString();
+    };
+
+    taskNameEdit->setText(getText(1));
+    startTimeEdit->setText(getText(2));
+    priorityEdit->setText(getText(3));
+    categoryEdit->setText(getText(4));
+    remindTimeEdit->setText(getText(5));
+
+    operationStatusLabel->setText("Selected task loaded into editor.");
+}
+
+void MainWindow::handleEditTask() {
+    if (!taskManager) {
+        return;
+    }
+
+    const int id = getSelectedTaskId();
+
+    if (id < 0) {
+        QMessageBox::warning(this, "Update Failed", "Please select a task first.");
+        return;
+    }
+
+    const std::string name = taskNameEdit->text().trimmed().toStdString();
+    const std::string startTime = startTimeEdit->text().trimmed().toStdString();
+    const std::string priority = priorityEdit->text().trimmed().toStdString();
+    const std::string category = categoryEdit->text().trimmed().toStdString();
+    const std::string remindTime = remindTimeEdit->text().trimmed().toStdString();
+
+    // DELIBERATE BUG: Missing check for empty task name and start time here.
+
+    bool ok = true;
+    ok = ok && taskManager->editTask(id, "name", name);
+    ok = ok && taskManager->editTask(id, "startTime", startTime);
+    ok = ok && taskManager->editTask(id, "priority", priority.empty() ? "medium" : priority);
+    ok = ok && taskManager->editTask(id, "category", category.empty() ? "life" : category);
+    ok = ok && taskManager->editTask(id, "remindTime", remindTime);
+
+    if (!ok) {
+        QMessageBox::warning(
+            this,
+            "Update Failed",
+            "Failed to update task. Please check time format or uniqueness constraints."
+        );
+        refreshTaskTable();
+        return;
+    }
+
+    operationStatusLabel->setText("Task updated successfully.");
+    refreshTaskTable();
+}
+
+void MainWindow::handleDeleteTask() {
+    if (!taskManager) {
+        return;
+    }
+
+    const int id = getSelectedTaskId();
+
+    if (id < 0) {
+        QMessageBox::warning(this, "Delete Failed", "Please select a task first.");
+        return;
+    }
+
+    const auto result = QMessageBox::question(
+        this,
+        "Confirm Delete",
+        "Delete selected task?"
+    );
+
+    if (result != QMessageBox::Yes) {
+        return;
+    }
+
+    if (!taskManager->deleteTaskById(id)) {
+        QMessageBox::warning(this, "Delete Failed", "Failed to delete task.");
+        return;
+    }
+
+    operationStatusLabel->setText("Task deleted successfully.");
+    refreshTaskTable();
+}
+
+void MainWindow::handleDoneTask() {
+    if (!taskManager) {
+        return;
+    }
+
+    const int id = getSelectedTaskId();
+
+    if (id < 0) {
+        QMessageBox::warning(this, "Mark Done Failed", "Please select a task first.");
+        return;
+    }
+
+    if (!taskManager->markTaskDone(id)) {
+        QMessageBox::warning(this, "Mark Done Failed", "Failed to mark task as done.");
+        return;
+    }
+
+    operationStatusLabel->setText("Task marked as done.");
+    refreshTaskTable();
+}
+
+void MainWindow::handleReminderCheck() {
+    if (!taskManager) {
+        return;
+    }
+
+    taskManager->loadTasks();
+    taskManager->checkAndRemindTasks();
+    refreshTaskTableWithFilters();
 }
