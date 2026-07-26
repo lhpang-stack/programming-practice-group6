@@ -89,6 +89,7 @@ void MainWindow::setupUi() {
 
     mainLayout->addWidget(titleLabel);
 
+
     // Login area
     auto* loginGroup = new QGroupBox("User Login", centralWidget);
     auto* loginLayout = new QHBoxLayout(loginGroup);
@@ -215,7 +216,7 @@ void MainWindow::setupUi() {
     reminderTimer = new QTimer(this);
     reminderTimer->setInterval(30000);
 
-    setStyleSheet(
+        setStyleSheet(
         "QMainWindow { background-color: #f5f7fb; }"
 
         "QGroupBox { "
@@ -305,6 +306,11 @@ void MainWindow::setTaskControlsEnabled(bool enabled) {
 void MainWindow::handleLogin() {
     const QString username = usernameEdit->text().trimmed();
     const QString password = passwordEdit->text();
+
+    if (username.isEmpty() || password.isEmpty()) {
+        QMessageBox::warning(this, "Login Failed", "Username and password cannot be empty.");
+        return;
+    }
 
     if (!userManager.loginUser(username.toStdString(), password.toStdString())) {
         loginStatusLabel->setText("Login failed");
@@ -435,7 +441,10 @@ void MainWindow::handleAddTask() {
     std::string category = categoryEdit->text().trimmed().toStdString();
     const std::string remindTime = remindTimeEdit->text().trimmed().toStdString();
 
-    // DELIBERATE BUG: Missing check for empty task name and start time here.
+    if (name.empty() || startTime.empty()) {
+        QMessageBox::warning(this, "Add Failed", "Task name and start time are required.");
+        return;
+    }
 
     if (priority.empty()) {
         priority = "medium";
@@ -530,7 +539,10 @@ void MainWindow::handleEditTask() {
     const std::string category = categoryEdit->text().trimmed().toStdString();
     const std::string remindTime = remindTimeEdit->text().trimmed().toStdString();
 
-    // DELIBERATE BUG: Missing check for empty task name and start time here.
+    if (name.empty() || startTime.empty()) {
+        QMessageBox::warning(this, "Update Failed", "Task name and start time are required.");
+        return;
+    }
 
     bool ok = true;
     ok = ok && taskManager->editTask(id, "name", name);
