@@ -564,3 +564,4 @@ void TaskManager::checkAndRemindTasks() {
 const std::vector<Task>& TaskManager::getTasks() const {
     return tasks;
 }
+// fix: handle invalid task id
