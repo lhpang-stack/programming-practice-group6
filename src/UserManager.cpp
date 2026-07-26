@@ -1,4 +1,5 @@
 #include "UserManager.h"
+#include "Utils.h"
 
 #include <fstream>
 #include <sstream>
@@ -14,29 +15,33 @@ UserManager::UserManager(const std::string& userFilePath)
 }
 
 bool UserManager::registerUser(const std::string& username, const std::string& password) {
-    if (username.empty() || password.empty()) {
+    std::string cleanedUsername = Utils::trim(username);
+
+    if (!Utils::isValidUsername(cleanedUsername) || !Utils::isValidPassword(password)) {
         return false;
     }
 
     loadUsers();
 
-    if (userExists(username)) {
+    if (userExists(cleanedUsername)) {
         return false;
     }
 
-    users[username] = password;
+    users[cleanedUsername] = password;
     return saveUsers();
 }
 
 bool UserManager::login(const std::string& username, const std::string& password) {
-    if (username.empty() || password.empty()) {
+    std::string cleanedUsername = Utils::trim(username);
+
+    if (!Utils::isValidUsername(cleanedUsername) || password.empty()) {
         currentUser.clear();
         return false;
     }
 
     loadUsers();
 
-    auto it = users.find(username);
+    auto it = users.find(cleanedUsername);
 
     if (it == users.end()) {
         currentUser.clear();
@@ -48,7 +53,7 @@ bool UserManager::login(const std::string& username, const std::string& password
         return false;
     }
 
-    currentUser = username;
+    currentUser = cleanedUsername;
     return true;
 }
 
@@ -57,7 +62,13 @@ void UserManager::logout() {
 }
 
 bool UserManager::userExists(const std::string& username) const {
-    return users.find(username) != users.end();
+    std::string cleanedUsername = Utils::trim(username);
+
+    if (cleanedUsername.empty()) {
+        return false;
+    }
+
+    return users.find(cleanedUsername) != users.end();
 }
 
 bool UserManager::isLoggedIn() const {
@@ -85,8 +96,10 @@ bool UserManager::loadUsers() {
         std::string password;
 
         if (std::getline(ss, username, ',') && std::getline(ss, password)) {
-            if (!username.empty() && !password.empty()) {
-                users[username] = password;
+            std::string cleanedUsername = Utils::trim(username);
+
+            if (Utils::isValidUsername(cleanedUsername) && !password.empty()) {
+                users[cleanedUsername] = password;
             }
         }
     }
