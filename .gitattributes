@@ -1,0 +1,49 @@
+# =========================
+# Default text handling
+# =========================
+* text=auto
+
+# =========================
+# C++ source files
+# =========================
+*.h     text eol=lf
+*.hpp   text eol=lf
+*.cpp   text eol=lf
+*.cc    text eol=lf
+*.cxx   text eol=lf
+*.c     text eol=lf
+
+# =========================
+# Project / documentation text files
+# =========================
+*.md    text eol=lf
+*.txt   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# =========================
+# Shell / script files
+# =========================
+*.sh    text eol=lf
+*.py    text eol=lf
+
+# =========================
+# Windows scripts
+# =========================
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# =========================
+# Binary files
+# =========================
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+
